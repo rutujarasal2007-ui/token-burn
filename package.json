@@ -17,6 +17,7 @@
     "proof-server:stop": "docker compose down",
     "clean": "rm -rf contracts/managed .midnight-state.json .midnight-wallet-state",
     "test": "NODE_OPTIONS=--experimental-vm-modules vitest run",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules vitest run --config vitest.integration.config.ts",
     "test:e2e": "tsx scripts/e2e-check.ts",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build"
@@ -59,5 +60,8 @@
   "allowScripts": {
     "classic-level@3.0.0": true,
     "esbuild@0.28.1": true
+  },
+  "overrides": {
+    "@midnight-ntwrk/onchain-runtime-v3": "3.1.0"
   }
 }

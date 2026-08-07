@@ -8,6 +8,6 @@ export default defineConfig({
     maxWorkers: 1,
     singleThread: true,
     reporters: ['default'],
-    include: ['tests/*.test.ts'],
+    include: ['tests/integration/**/*.test.ts'],
   },
 });
