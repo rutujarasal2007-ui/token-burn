@@ -1,0 +1,79 @@
+/**
+ * Token Burn Mechanism — "INTO the Midnight" (SPPU) bootcamp
+ *
+ * A deflationary Midnight token: every transfer automatically burns
+ * `burnRateBps` basis points of the transferred amount, permanently
+ * removing tokens from the circulating supply. Users can also voluntarily
+ * burn their own tokens.
+ *
+ * ── PUBLIC — disclosed to the ledger, visible to everyone ────────────────
+ *   totalSupply : circulating supply; decreases by the burn amount on every
+ *                 transfer and every voluntary burn
+ *   totalBurned : cumulative tokens burned; increases by the same amounts
+ *   burnRateBps : automatic burn rate in basis points (100 = 1%)
+ *
+ * ── PRIVATE — never leaves the wallet; only a ZK proof reaches the chain ─
+ *   - the per-account balances map (keyed by account key)
+ *   - the sender's secret key (sk)
+ *   - the recipient's account key (to)
+ *   - the transferred / burned amounts
+ *
+ * Only the AGGREGATE burn amount is ever revealed, and only through the
+ * public totalSupply / totalBurned counters — never who sent what to whom.
+ */
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+export ledger totalSupply: Uint<64>;
+export ledger totalBurned: Uint<64>;
+export ledger burnRateBps: Uint<0..9999>;
+
+witness getBalance(account: Bytes<32>): Uint<64>;
+witness applyBalance(account: Bytes<32>, newBalance: Uint<64>): [];
+witness computeBurn(amount: Uint<64>): Uint<64>;
+
+export circuit accountKey(sk: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([
+        pad(32, "token-burn:account:"),
+        sk,
+    ]);
+}
+
+constructor(initialSupply: Uint<64>, burnRate: Uint<0..9999>, owner: Bytes<32>) {
+    burnRateBps = disclose(burnRate);
+    totalSupply = disclose(initialSupply);
+    totalBurned = (0 as Uint<64>);
+    applyBalance(owner, initialSupply);
+}
+
+export circuit transfer(sk: Bytes<32>, to: Bytes<32>, amount: Uint<64>): [] {
+    assert(amount > (0 as Uint<64>), "Transfer amount must be positive");
+    const senderAccount = accountKey(sk);
+    const burn = computeBurn(amount);
+    const amountPlusBurn128 = (amount as Uint<128>) + (burn as Uint<128>);
+    const senderBalance = getBalance(senderAccount);
+    const recipientBalance = getBalance(to);
+    assert((senderBalance as Uint<128>) >= amountPlusBurn128, "Insufficient balance");
+    const amount128 = amount as Uint<128>;
+    const burn128 = burn as Uint<128>;
+    const owedBurn = amount128 * burnRateBps;
+    assert(burn128 * 10000 <= owedBurn, "Computed burn exceeds burn rate");
+    assert((burn128 + 1) * 10000 > owedBurn, "Computed burn is not floored");
+    const senderNewBalance = (senderBalance - amount - burn) as Uint<64>;
+    const recipientNewBalance = (recipientBalance + amount) as Uint<64>;
+    applyBalance(senderAccount, senderNewBalance);
+    applyBalance(to, recipientNewBalance);
+    totalSupply = disclose((totalSupply - burn) as Uint<64>);
+    totalBurned = disclose((totalBurned + burn) as Uint<64>);
+}
+
+export circuit burn(sk: Bytes<32>, amount: Uint<64>): [] {
+    assert(amount > (0 as Uint<64>), "Burn amount must be positive");
+    const senderAccount = accountKey(sk);
+    const currentBalance = getBalance(senderAccount);
+    assert(currentBalance >= amount, "Insufficient balance");
+    applyBalance(senderAccount, (currentBalance - amount) as Uint<64>);
+    totalSupply = disclose((totalSupply - amount) as Uint<64>);
+    totalBurned = disclose((totalBurned + amount) as Uint<64>);
+}
