@@ -19,8 +19,10 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules vitest run",
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules vitest run --config vitest.integration.config.ts",
     "test:e2e": "tsx scripts/e2e-check.ts",
-    "frontend:dev": "npm --prefix frontend run dev",
-    "frontend:build": "npm --prefix frontend run build"
+    "api": "tsx src/api-server.ts",
+    "frontend:dev": "concurrently -k -n api,web -c magenta,cyan \"npm run api\" \"npm --prefix frontend run dev\"",
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:start": "concurrently -k -n api,web -c magenta,cyan \"npm run api\" \"npm --prefix frontend run preview\""
   },
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "0.16.0",
@@ -34,13 +36,18 @@
     "@midnight-ntwrk/midnight-js-types": "4.1.1",
     "@midnight-ntwrk/midnight-js-utils": "4.1.1",
     "@midnight-ntwrk/wallet-sdk": "1.2.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "rxjs": "^7.8.2",
     "ws": "^8.21.1"
   },
   "devDependencies": {
     "@midnight-ntwrk/testkit-js": "4.1.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
+    "concurrently": "^10.0.4",
     "tsx": "^4.23.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
