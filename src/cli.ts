@@ -18,7 +18,7 @@ import { findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 
 import { resolveNetwork, getOrCreateSeed, getDeployment } from './network';
 import { createWallet, persistWalletState, unshieldedToken, type WalletContext } from './wallet';
-import { createProviders, INITIAL_PRIVATE_STATE, PRIVATE_STATE_ID, readLedger } from './providers';
+import { createProviders, PRIVATE_STATE_ID, readLedger } from './providers';
 import { tokenAccount, OWNER_ACCOUNT_INDEX, type TokenAccount } from './accounts';
 import { tokenBurnContract } from '../contracts/index.js';
 import { bytesToHex } from '../contracts/witnesses.js';
@@ -98,7 +98,6 @@ async function main() {
       compiledContract: tokenBurnContract,
       contractAddress,
       privateStateId: PRIVATE_STATE_ID,
-      initialPrivateState: INITIAL_PRIVATE_STATE,
     });
 
     console.log('  ✅ Connected!\n');

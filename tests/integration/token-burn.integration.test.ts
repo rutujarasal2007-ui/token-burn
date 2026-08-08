@@ -8,13 +8,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
-import { createDefaultTestLogger, inMemoryPrivateStateProvider, MidnightWalletProvider } from '@midnight-ntwrk/testkit-js';
+import { createDefaultTestLogger, FluentWalletBuilder, inMemoryPrivateStateProvider, MidnightWalletProvider } from '@midnight-ntwrk/testkit-js';
 import { deployContract } from '@midnight-ntwrk/midnight-js-contracts';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
 import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import { httpClientProofProvider } from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
 import { NetworkId } from '@midnight-ntwrk/wallet-sdk';
 import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
+import { DustSecretKey, LedgerParameters, ZswapSecretKeys } from '@midnight-ntwrk/midnight-js-protocol/ledger';
 
 import { tokenBurnContract, zkConfigPath } from '../../contracts/index.js';
 import { ledger } from '../../contracts/managed/token-burn/contract/index.js';
@@ -45,6 +46,7 @@ const BURN_RATE_BPS = 100n; // 1%
 const TRANSFER_AMOUNT = 1_000_000n;
 const TRANSFER_BURN = (TRANSFER_AMOUNT * BURN_RATE_BPS) / 10_000n; // 10,000
 const VOLUNTARY_BURN = 1_000_000n;
+const FEE_OVERHEAD = 1_000_000n; // positive DUST fee; a zero fee is rejected as NotNormalized (117)
 
 const logger = createDefaultTestLogger();
 
@@ -73,7 +75,27 @@ describe('token-burn contract (local devnet)', () => {
   }
 
   it('deploys the contract and initializes the ledger + owner balance', async () => {
-    const wallet = await MidnightWalletProvider.build(logger, devnet, GENESIS_SEED);
+    // Testkit's default wallet uses additionalFeeOverhead: 0n, so on an idle
+    // local devnet (per-block fee rate ~0) it builds a zero-fee transaction
+    // with empty DustActions, which the node rejects as NotNormalized (117).
+    // Inject a small positive fee so the wallet always pays a DUST fee.
+    const { wallet: facade, seeds, keystore } = await FluentWalletBuilder.forEnvironment(devnet)
+      .withSeed(GENESIS_SEED)
+      .withDustOptions({
+        ledgerParams: LedgerParameters.initialParameters(),
+        additionalFeeOverhead: FEE_OVERHEAD,
+        feeBlocksMargin: 5,
+      })
+      .buildWithoutStarting();
+
+    const wallet = await MidnightWalletProvider.withWallet(
+      logger,
+      devnet,
+      facade,
+      ZswapSecretKeys.fromSeed(seeds.shielded),
+      DustSecretKey.fromSeed(seeds.dust),
+      keystore,
+    );
     await wallet.start();
 
     const zkConfigProvider = new NodeZkConfigProvider<TokenBurnCircuitId>(zkConfigPath);
@@ -133,5 +155,24 @@ describe('token-burn contract (local devnet)', () => {
     expect(balances.get(owner.accountKeyHex)).toBe(
       INITIAL_SUPPLY - VOLUNTARY_BURN - TRANSFER_AMOUNT - TRANSFER_BURN,
     );
+  });
+
+  it('reconnecting via findDeployedContract preserves the private balances', async () => {
+    const { findDeployedContract } = await import('@midnight-ntwrk/midnight-js-contracts');
+    const found = await findDeployedContract(providers, {
+      compiledContract: tokenBurnContract,
+      contractAddress,
+      privateStateId: PRIVATE_STATE_ID,
+    });
+
+    const balances = await readBalances();
+    expect(balances.get(recipient.accountKeyHex)).toBe(TRANSFER_AMOUNT);
+    expect(balances.get(owner.accountKeyHex)).toBe(
+      INITIAL_SUPPLY - VOLUNTARY_BURN - TRANSFER_AMOUNT - TRANSFER_BURN,
+    );
+
+    const l = await readLedger();
+    expect(l.totalSupply).toBe(INITIAL_SUPPLY - VOLUNTARY_BURN - TRANSFER_BURN);
+    expect(found.callTx).toBeDefined();
   });
 });
